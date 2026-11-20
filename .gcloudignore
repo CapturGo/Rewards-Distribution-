@@ -3,3 +3,5 @@ target/
 .git/
 .env
 .gocache
+.m2repo/
+.devnet-keys/
