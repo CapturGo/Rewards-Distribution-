@@ -8,3 +8,4 @@ target/
 .vscode/
 *.iml
 .DS_Store
+.m2repo/

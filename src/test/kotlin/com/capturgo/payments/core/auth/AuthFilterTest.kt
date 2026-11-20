@@ -38,9 +38,13 @@ class AuthFilterTest {
   }
 
   @Test
-  fun `admin verify endpoint skips auth`() {
-    filter().doFilter(req("/api/v1/admin/auth/verify"), res(), chain)
-    verify { chain.doFilter(any(), any()) }
+  fun `admin verify endpoint requires auth like other admin paths`() {
+    // The endpoint is the dashboard session check — it must populate the
+    // principal, so it can no longer skip the filter. Missing token → 401.
+    val response = res()
+    filter().doFilter(req("/api/v1/admin/auth/verify"), response, chain)
+    verify { response.status = 401 }
+    verify(exactly = 0) { chain.doFilter(any(), any()) }
   }
 
   @Test

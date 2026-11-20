@@ -94,12 +94,19 @@ class PayoutExecutionService(
     }
 
     // Persist signature immediately — this is the idempotency anchor.
+    // A landed-but-failed transaction is recorded FAILED, never CONFIRMED.
+    val txStatus = when {
+      result.confirmed -> "CONFIRMED"
+      result.chainError != null -> "FAILED"
+      else -> "SUBMITTED"
+    }
     payoutRepository.insertPayoutTransaction(
       batchItemId = item.id,
       txSignature = result.signature,
       cluster = cluster,
-      status = if (result.confirmed) "CONFIRMED" else "SUBMITTED",
-      rawResponse = """{"confirmationStatus":"${result.confirmationStatus}"}""",
+      status = txStatus,
+      rawResponse = """{"confirmationStatus":"${result.confirmationStatus}""" +
+        (result.chainError?.let { ""","chainError":"$it""" } ?: "") + "}",
     )
     payoutRepository.updateItemStatus(
       item.id,
@@ -111,12 +118,13 @@ class PayoutExecutionService(
       payoutRepository.markRewardPaid(item.rewardId)
       return true
     }
-    // Submitted but not confirmed within timeout — stays payable-tracked,
-    // reconciler confirms later. NOT marked paid.
+    // Not confirmed on-chain — either still pending or failed on-chain.
+    // Never mark paid; route to reconciliation/manual review.
     payoutRepository.updateItemStatus(
       item.id, "REQUIRES_RECONCILIATION",
       txSignature = result.signature,
-      failureReason = "confirmation timeout, status=${result.confirmationStatus}",
+      failureReason = result.chainError?.let { "on-chain failure: $it" }
+        ?: "confirmation timeout, status=${result.confirmationStatus}",
     )
     return false
   }

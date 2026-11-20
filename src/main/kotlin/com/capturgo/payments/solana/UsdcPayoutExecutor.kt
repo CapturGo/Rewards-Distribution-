@@ -27,6 +27,8 @@ class UsdcPayoutExecutor(
     val signature: String,
     val confirmed: Boolean,
     val confirmationStatus: String?,
+    /** Non-null when the transaction landed but failed on-chain. */
+    val chainError: String? = null,
   )
 
   /**
@@ -70,7 +72,25 @@ class UsdcPayoutExecutor(
     val signature = rpc.sendTransaction(tx, treasury)
 
     val status = awaitConfirmation(signature)
-    return TransferResult(signature, status == "confirmed" || status == "finalized", status)
+    val landed = status == "confirmed" || status == "finalized"
+
+    // A landed transaction can still FAIL on-chain (insufficient funds, bad
+    // account, etc.) — confirmationStatus alone cannot distinguish success.
+    // Fetch meta.err before reporting success. If the detail lookup itself
+    // fails we conservatively report unconfirmed → reconciliation path.
+    if (!landed) {
+      return TransferResult(signature, confirmed = false, confirmationStatus = status)
+    }
+    val detail = runCatching { rpc.getTransactionDetail(signature) }.getOrNull()
+      ?: return TransferResult(signature, confirmed = false, confirmationStatus = status)
+    return if (detail.err == null) {
+      TransferResult(signature, confirmed = true, confirmationStatus = status)
+    } else {
+      TransferResult(
+        signature, confirmed = false, confirmationStatus = status,
+        chainError = detail.err.toString(),
+      )
+    }
   }
 
   /**

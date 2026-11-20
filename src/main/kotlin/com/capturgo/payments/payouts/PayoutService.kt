@@ -62,13 +62,17 @@ class PayoutService(
       )
     }
 
+    val creatorId = admin.capturUserId
+      ?: throw com.capturgo.payments.core.exception.ForbiddenException(
+        "Admin identity unresolved — cannot create payout batch",
+      )
     val batchId = payoutRepository.insertBatch(
       status = "PENDING_APPROVAL",
       totalUnits = totalUnits,
       itemCount = rewards.size,
       cluster = solanaCluster,
       idempotencyKey = idempotencyKey,
-      createdBy = admin.capturUserId ?: UUID.fromString(admin.privyUserId.let { "00000000-0000-0000-0000-000000000000" }),
+      createdBy = creatorId,
     ) ?: throw ConflictException("Batch with this idempotency key already exists")
 
     // Reserve rewards atomically — only AVAILABLE rows flip
@@ -77,14 +81,19 @@ class PayoutService(
       throw ConflictException("Only $reserved of ${request.rewardIds.size} rewards could be reserved")
     }
 
-    // Create items with wallet snapshots
+    // Create items with wallet snapshots — only VERIFIED wallets may be paid.
     val wallets = walletRepository.findAll()
     for (reward in rewards) {
       val wallet = wallets[reward.capturUserId]
       val address = wallet?.solanaAddress
-        ?: throw com.capturgo.payments.core.exception.UnprocessableException(
-          "No Solana wallet on file for user ${reward.capturUserId} (reward ${reward.id})",
+      if (wallet == null || wallet.verification != "VERIFIED" || address == null ||
+        !com.capturgo.payments.rewards.RewardSyncService.isSolanaAddress(address)
+      ) {
+        throw com.capturgo.payments.core.exception.UnprocessableException(
+          "No verified Solana wallet for user ${reward.capturUserId} " +
+            "(reward ${reward.id}, walletStatus=${wallet?.verification ?: "MISSING"})",
         )
+      }
       val inserted = payoutRepository.insertItem(
         batchId = batchId,
         rewardId = reward.id,
@@ -118,9 +127,6 @@ class PayoutService(
   @Transactional
   fun approveBatch(batchId: UUID, admin: AuthPrincipal, ip: String?, ua: String?): PayoutBatch {
     val batch = payoutRepository.findBatch(batchId) ?: throw NotFoundException("Batch not found")
-    if (batch.status != "PENDING_APPROVAL" && batch.status != "CREATED") {
-      throw ConflictException("Batch is ${batch.status}, cannot approve")
-    }
     val approverId = admin.capturUserId
       ?: throw com.capturgo.payments.core.exception.ForbiddenException("Approver identity unresolved")
     if (approverId == batch.createdBy) {
@@ -128,7 +134,11 @@ class PayoutService(
         "Approver must differ from batch creator",
       )
     }
-    payoutRepository.updateBatchStatus(batchId, "APPROVED", approvedBy = approverId)
+    // Atomic transition — cannot overwrite PROCESSING or later states, so an
+    // approval can't resurrect a batch mid-execution.
+    if (!payoutRepository.approveBatchAtomically(batchId, approverId)) {
+      throw ConflictException("Batch is ${batch.status}, cannot approve")
+    }
     payoutRepository.audit(
       actorId = approverId, actorEmail = admin.email, action = "BATCH_APPROVED",
       entityType = "payout_batch", entityId = batchId,
@@ -142,11 +152,13 @@ class PayoutService(
   @Transactional
   fun cancelBatch(batchId: UUID, admin: AuthPrincipal, ip: String?, ua: String?): PayoutBatch {
     val batch = payoutRepository.findBatch(batchId) ?: throw NotFoundException("Batch not found")
-    if (batch.status !in setOf("PENDING_APPROVAL", "CREATED", "APPROVED")) {
+    // Atomic claim FIRST — only pre-execution states can be cancelled. If
+    // execution already claimed the batch (PROCESSING+), this returns false
+    // and no rewards are released while payments may be in flight.
+    if (!payoutRepository.claimBatchForCancellation(batchId)) {
       throw ConflictException("Batch in status ${batch.status} cannot be cancelled")
     }
     val items = payoutRepository.listItems(batchId)
-    payoutRepository.updateBatchStatus(batchId, "CANCELLED")
     payoutRepository.releaseRewards(items.map { it.rewardId })
     payoutRepository.audit(
       actorId = admin.capturUserId, actorEmail = admin.email, action = "BATCH_CANCELLED",

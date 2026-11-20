@@ -106,6 +106,29 @@ class RewardSyncServiceTest {
   }
 
   @Test
+  fun `lowercase approved status from captur-api still creates reward`() {
+    // captur-api serializes ActivityStatus via toDisplayName() → "approved".
+    // The eligibility check must be case-insensitive or every real
+    // submission is skipped as INELIGIBLE.
+    val sub = submission(UUID.randomUUID(), status = "approved")
+    pageOf(sub)
+    every { rewardRepo.existsBySubmissionId(sub.id) } returns false
+    every { deviceRepo.findByDeviceKey("pixel 8") } returns verifiedBasic()
+    every { walletRepo.findByUserId(sub.userId) } returns null
+    every { capturApi.getUser(any(), sub.userId) } returns null
+    every { walletRepo.upsert(any(), any(), any(), any()) } returns Unit
+    every {
+      rewardRepo.insertIfAbsent(any(), any(), any(), any(), any(), any(),
+        any(), any(), any(), any(), any())
+    } returns true
+    every { evidenceRepo.insertIfAbsent(any(), any(), any()) } returns true
+
+    val result = service().sync("token")
+    assertEquals(1, result.created)
+    assertEquals(0, result.skippedIneligible)
+  }
+
+  @Test
   fun `unknown device is ineligible - never auto-basic`() {
     val sub = submission(UUID.randomUUID(), deviceModel = "Unknown Phone X")
     pageOf(sub)

@@ -110,6 +110,36 @@ class PayoutRepository(private val jdbc: JdbcTemplate) {
     )
   }
 
+  /**
+   * Atomically approve a batch. Only one caller can transition a pre-execution
+   * batch to APPROVED — prevents approve-overwriting PROCESSING mid-execution.
+   */
+  fun approveBatchAtomically(id: UUID, approverId: UUID): Boolean =
+    jdbc.update(
+      """
+      UPDATE payout_batches SET
+        status = 'APPROVED',
+        approved_by = ?,
+        approved_at = now(),
+        updated_at = now()
+      WHERE id = ? AND status IN ('PENDING_APPROVAL','CREATED')
+      """.trimIndent(),
+      approverId, id,
+    ) == 1
+
+  /**
+   * Atomically cancel a batch. Only wins from pre-execution states — can never
+   * overwrite PROCESSING or later, so in-flight payouts can't be orphaned.
+   */
+  fun claimBatchForCancellation(id: UUID): Boolean =
+    jdbc.update(
+      """
+      UPDATE payout_batches SET status = 'CANCELLED', updated_at = now()
+      WHERE id = ? AND status IN ('PENDING_APPROVAL','CREATED','APPROVED')
+      """.trimIndent(),
+      id,
+    ) == 1
+
   // ---------- items ----------
 
   fun insertItem(
@@ -299,12 +329,16 @@ class PayoutRepository(private val jdbc: JdbcTemplate) {
     )
   }
 
-  fun markRewardPaid(rewardId: UUID) {
+  /**
+   * Mark a reward PAID — only from RESERVED_FOR_PAYOUT. Guards against
+   * overwriting PAID/REVERSED/AVAILABLE states (e.g. a late-confirming
+   * transaction after manual review).
+   */
+  fun markRewardPaid(rewardId: UUID): Boolean =
     jdbc.update(
-      "UPDATE usdc_reward_ledger SET status = 'PAID', updated_at = now() WHERE id = ?",
+      "UPDATE usdc_reward_ledger SET status = 'PAID', updated_at = now() WHERE id = ? AND status = 'RESERVED_FOR_PAYOUT'",
       rewardId,
-    )
-  }
+    ) == 1
 
   fun insertPayoutTransaction(
     batchItemId: UUID,

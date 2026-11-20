@@ -22,9 +22,10 @@ class AuthFilter(
 ) : OncePerRequestFilter() {
 
   override fun shouldNotFilter(request: HttpServletRequest): Boolean {
-    val path = request.requestURI
-    return !path.startsWith("/api/v1/") ||
-      path.startsWith("/api/v1/admin/auth/verify")
+    // /admin/auth/verify must still run the filter: it is the session check
+    // that populates the principal the controller reads. Exempting it left
+    // `authenticated` permanently false.
+    return !request.requestURI.startsWith("/api/v1/")
   }
 
   override fun doFilterInternal(

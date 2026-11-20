@@ -78,6 +78,37 @@ class PayoutServiceTest {
   }
 
   @Test
+  fun `batch creation rejects rewards without a verified solana wallet`() {
+    val r = reward()
+    every { payoutRepo.findBatchByIdempotencyKey(any()) } returns null
+    every { rewardRepo.findByIds(listOf(r.id)) } returns listOf(r)
+    every { rewardRepo.findById(r.id) } returns r
+    every { payoutRepo.insertBatch(any(), any(), any(), any(), any(), any()) } returns UUID.randomUUID()
+    every { payoutRepo.reserveRewards(listOf(r.id)) } returns 1
+    every { walletRepo.findAll() } returns emptyMap()
+
+    assertThrows(com.capturgo.payments.core.exception.UnprocessableException::class.java) {
+      service().createBatch(CreateBatchRequest(listOf(r.id), "key-w"), admin(), null, null)
+    }
+  }
+
+  @Test
+  fun `approve loses atomically when batch already left pre-execution state`() {
+    val creatorId = UUID.randomUUID()
+    val approverId = UUID.randomUUID()
+    val batchId = UUID.randomUUID()
+    val batch = PayoutBatch(batchId, "PROCESSING", 5_000_000L, 1, "devnet", "k", creatorId,
+      null, null, null, Instant.now())
+    every { payoutRepo.findBatch(batchId) } returns batch
+    every { payoutRepo.approveBatchAtomically(batchId, approverId) } returns false
+    val approver = AuthPrincipal(approverId.toString(), "b@t.com", approverId, setOf("ADMIN"), "t")
+
+    assertThrows(ConflictException::class.java) {
+      service().approveBatch(batchId, approver, null, null)
+    }
+  }
+
+  @Test
   fun `approver must differ from creator`() {
     val creatorId = UUID.randomUUID()
     val batchId = UUID.randomUUID()

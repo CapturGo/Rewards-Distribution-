@@ -91,7 +91,9 @@ class RewardSyncService(
     if (rewardRepository.existsBySubmissionId(sub.id)) {
       return OutcomeResult(Outcome.EXISTING)
     }
-    if (sub.status != "APPROVED") {
+    // captur-api returns the display name ("approved"), not the enum name —
+    // compare case-insensitively or every submission lands INELIGIBLE.
+    if (!sub.status.equals("APPROVED", ignoreCase = true)) {
       return OutcomeResult(Outcome.INELIGIBLE)
     }
 
