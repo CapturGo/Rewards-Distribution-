@@ -1,8 +1,15 @@
 # What We Are Building — CapturGO USDC Payments
 
+> **Status update (2026-11-22):** deployed on Cloud Run as `captur-payments`,
+> reading submissions via **captur-go-api**. 193 rewards synced to
+> `usdc_reward_ledger` (AVAILABLE, ~132.45 USDC total, all wallets resolved).
+> Payout batches not yet created/executed. API contract for external
+> integrators: `BLOCKCHAIN_PAYOUT_API.md`. The table below reflects the
+> original build status; see README.md for current posture.
+
 ## The one-paragraph version
 
-We are building a **standalone Payments Service** that decides how much USDC each contributor earned for approved capture work, queues those earnings for admin review, and — once approved — sends real USDC on Solana to the contributor's existing Privy wallet. It is a separate service: it reads captur-api, keeps its own database, and never modifies the existing app or its token/points reward system.
+We are building a **standalone Payments Service** that decides how much USDC each contributor earned for approved capture work, queues those earnings for admin review, and — once approved — sends real USDC on Solana to the contributor's existing Privy wallet. It is a separate service: it reads captur-go-api, keeps its own database, and never modifies the existing app or its token/points reward system.
 
 ## The system in one picture
 
@@ -49,13 +56,13 @@ Unknown/unverified devices get **nothing** — never auto-BASIC.
 | Idempotent reward ledger (no duplicate rewards, ever) | Built + tested |
 | Privy login + admin authorization (ADMIN/FINANCE only) | Built + tested |
 | Privy→CapturGO identity mapping (verified via captur-api) | Built + tested, not yet run live |
-| Payout batch lifecycle (create/approve/cancel/execute) | Built + tested |
-| Solana devnet transfer code | Built + unit-tested, **never executed** |
+| Payout batch lifecycle (create/approve/cancel/execute) | Built + tested, deployed |
+| Solana devnet transfer code (keypair + Privy providers) | Built + unit-tested, deployed — **not yet executed on-chain** |
 | Device capability registry + admin API | Built + tested |
-| Automatic reward syncing | **Disabled** (`REWARD_AUTO_SYNC=false`) |
+| Automatic reward syncing | Manual via dashboard/API (`REWARD_AUTO_SYNC=false`) |
 | Real USDC / mainnet | **Blocked by code** — devnet only |
-| Admin dashboard integration | **Not started** (Phase D) |
-| Live end-to-end proof | **Not done** |
+| Admin dashboard integration | Done — Payouts page in captur-dashboard |
+| Live end-to-end proof | Reward sync proven (193 rows); on-chain payout **not yet done** |
 
 ## What is NOT decided yet
 
@@ -82,6 +89,8 @@ Unknown/unverified devices get **nothing** — never auto-BASIC.
 ## Documents in this folder
 
 - `payments-service-audit.md` — full technical audit (readiness per component)
+- `BLOCKCHAIN_PAYOUT_API.md` — external integrator API contract (network, token, endpoints, statuses)
+- `FINAL_AUDIT_REWARD_SYSTEM.md` / `REWARD_DISTRIBUTION_FINDINGS.md` / `USER_WALLET_STATUS.md` — audit & findings docs
 - `double-compensation-decision.md` — the open product question for Sai
 - `solana-devnet-setup.md` — how to provision devnet treasury/mint for first test
 - `device-evidence-gap.md` — what mobile must send (Phase B)
