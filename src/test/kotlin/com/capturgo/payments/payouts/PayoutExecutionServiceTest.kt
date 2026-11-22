@@ -3,6 +3,7 @@ package com.capturgo.payments.payouts
 import com.capturgo.payments.core.auth.AuthPrincipal
 import com.capturgo.payments.core.exception.ConflictException
 import com.capturgo.payments.core.exception.FeatureDisabledException
+import com.capturgo.payments.solana.PayoutExecutor
 import com.capturgo.payments.solana.UsdcPayoutExecutor
 import io.mockk.every
 import io.mockk.mockk
@@ -17,7 +18,7 @@ class PayoutExecutionServiceTest {
 
   private val payoutRepo = mockk<PayoutRepository>(relaxed = true)
   private val rewardRepo = mockk<com.capturgo.payments.rewards.RewardRepository>(relaxed = true)
-  private val executor = mockk<UsdcPayoutExecutor>()
+  private val executor = mockk<PayoutExecutor>()
 
   private fun service(enabled: Boolean = true, cluster: String = "devnet") = PayoutExecutionService(
     payoutRepository = payoutRepo,

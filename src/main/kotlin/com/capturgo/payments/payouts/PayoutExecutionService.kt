@@ -3,7 +3,7 @@ package com.capturgo.payments.payouts
 import com.capturgo.payments.core.auth.AuthPrincipal
 import com.capturgo.payments.core.exception.ConflictException
 import com.capturgo.payments.core.exception.NotFoundException
-import com.capturgo.payments.solana.UsdcPayoutExecutor
+import com.capturgo.payments.solana.PayoutExecutor
 import java.util.UUID
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
@@ -23,8 +23,8 @@ import org.springframework.stereotype.Service
 class PayoutExecutionService(
   private val payoutRepository: PayoutRepository,
   private val rewardRepository: com.capturgo.payments.rewards.RewardRepository,
-  private val executor: UsdcPayoutExecutor,
-  @Value("\${payments.solana.enabled:false}") private val solanaEnabled: Boolean,
+  private val executor: PayoutExecutor,
+  @Value("\${payments.payout.enabled:\${payments.solana.enabled:false}}") private val solanaEnabled: Boolean,
   @Value("\${payments.solana.cluster:devnet}") private val cluster: String,
 ) {
   private val logger = LoggerFactory.getLogger(PayoutExecutionService::class.java)

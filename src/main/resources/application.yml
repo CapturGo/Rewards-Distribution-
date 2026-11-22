@@ -32,6 +32,9 @@ payments:
   # Privy JWT verification (authentication only — roles resolved via captur-api)
   privy:
     app-id: ${PRIVY_APP_ID:}
+    app-secret: ${PRIVY_APP_SECRET:}
+    api-base-url: ${PRIVY_API_BASE_URL:https://api.privy.io}
+    timeout-ms: ${PRIVY_API_TIMEOUT_MS:15000}
     jwks-url: ${PRIVY_JWKS_URL:https://auth.privy.io/api/v1/apps/${PRIVY_APP_ID}/jwks.json}
   # Admin authorization: emails allowed to call /admin/* endpoints.
   # Roles themselves are verified server-side against captur-api /admin/auth/verify.
@@ -51,6 +54,21 @@ payments:
     auto-sync-enabled: ${REWARD_AUTO_SYNC:false}
     auto-sync-interval-ms: ${REWARD_SYNC_INTERVAL_MS:300000}
     auto-sync-initial-delay-ms: ${REWARD_SYNC_INITIAL_DELAY_MS:60000}
+  # Payout transport selection. `keypair` = raw Solana keypair (legacy),
+  # `privy` = Privy Wallet Actions API against a Privy-managed treasury
+  # wallet. Ledger/batch/approval logic is identical for both.
+  payout:
+    provider: ${PAYOUT_PROVIDER:keypair}
+    enabled: ${PAYOUT_ENABLED:${SOLANA_ENABLED:false}}
+  # Privy Wallet Actions payout execution (provider=privy). Devnet only —
+  # `chain` must stay solana_devnet until mainnet custody is decided.
+  privy-payout:
+    enabled: ${PRIVY_PAYOUT_ENABLED:false}
+    treasury-wallet-id: ${PRIVY_TREASURY_WALLET_ID:}
+    chain: ${PRIVY_PAYOUT_CHAIN:solana_devnet}
+    usdc-decimals: ${PRIVY_PAYOUT_USDC_DECIMALS:6}
+    action-timeout-ms: ${PRIVY_PAYOUT_ACTION_TIMEOUT_MS:120000}
+    action-poll-ms: ${PRIVY_PAYOUT_ACTION_POLL_MS:3000}
   # Solana — execution DISABLED until config confirmed. Devnet only for now.
   solana:
     enabled: ${SOLANA_ENABLED:false}

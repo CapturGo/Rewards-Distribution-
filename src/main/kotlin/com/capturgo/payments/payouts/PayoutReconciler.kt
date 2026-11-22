@@ -1,6 +1,6 @@
 package com.capturgo.payments.payouts
 
-import com.capturgo.payments.solana.SolanaRpcClient
+import com.capturgo.payments.solana.PayoutExecutor
 import java.util.UUID
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
@@ -24,7 +24,7 @@ import org.springframework.stereotype.Component
 @Component
 class PayoutReconciler(
   private val payoutRepository: PayoutRepository,
-  private val rpc: SolanaRpcClient,
+  private val executor: PayoutExecutor,
   @Value("\${payments.solana.reconcile-enabled:false}") private val enabled: Boolean,
   @Value("\${payments.solana.reconcile-batch-size:50}") private val batchSize: Int,
   @Value("\${payments.solana.cluster:devnet}") private val cluster: String,
@@ -60,8 +60,8 @@ class PayoutReconciler(
       logger.warn("reconcile skipped: cluster={} (devnet only)", cluster)
       return ReconcileReport(0, 0, 0, 0, 0, 0)
     }
-    if (!rpc.configured) {
-      logger.warn("reconcile skipped: SOLANA_RPC_URL not configured")
+    if (!executor.configured) {
+      logger.warn("reconcile skipped: payout executor not configured")
       return ReconcileReport(0, 0, 0, 0, 0, 0)
     }
 
@@ -82,10 +82,10 @@ class PayoutReconciler(
       }
       touchedBatches += item.batchId
       val detail = try {
-        rpc.getTransactionDetail(signature)
+        executor.lookup(signature)
       } catch (e: Exception) {
         rpcErrors++
-        logger.warn("reconcile rpc error for item {} sig {}: {}", item.id, signature, e.message)
+        logger.warn("reconcile lookup error for item {} sig {}: {}", item.id, signature, e.message)
         continue
       } ?: run {
         stillPending++ // unknown to cluster — may still land; leave for next run

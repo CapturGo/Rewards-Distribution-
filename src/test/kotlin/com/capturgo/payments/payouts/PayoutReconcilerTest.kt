@@ -1,5 +1,6 @@
 package com.capturgo.payments.payouts
 
+import com.capturgo.payments.solana.PayoutExecutor
 import com.capturgo.payments.solana.SolanaRpcClient
 import io.mockk.every
 import io.mockk.mockk
@@ -12,11 +13,11 @@ import org.junit.jupiter.api.Test
 class PayoutReconcilerTest {
 
   private val payoutRepo = mockk<PayoutRepository>(relaxed = true)
-  private val rpc = mockk<SolanaRpcClient>()
+  private val executor = mockk<PayoutExecutor>()
 
   private fun reconciler(enabled: Boolean = true, cluster: String = "devnet") = PayoutReconciler(
     payoutRepository = payoutRepo,
-    rpc = rpc,
+    executor = executor,
     enabled = enabled,
     batchSize = 50,
     cluster = cluster,
@@ -41,8 +42,8 @@ class PayoutReconcilerTest {
   fun `confirmed on-chain with no error marks item and reward paid`() {
     val entry = reconcilable()
     every { payoutRepo.listReconcilableItems(50) } returns listOf(entry)
-    every { rpc.configured } returns true
-    every { rpc.getTransactionDetail("sigABC") } returns detail("confirmed", err = null)
+    every { executor.configured } returns true
+    every { executor.lookup("sigABC") } returns detail("confirmed", err = null)
     every { payoutRepo.confirmItemIfUnresolved(entry.item.id) } returns true
 
     val report = reconciler().reconcileOnce()
@@ -57,8 +58,8 @@ class PayoutReconcilerTest {
   fun `finalized status also confirms`() {
     val entry = reconcilable(status = "SUBMITTED")
     every { payoutRepo.listReconcilableItems(50) } returns listOf(entry)
-    every { rpc.configured } returns true
-    every { rpc.getTransactionDetail("sigABC") } returns detail("finalized", err = null)
+    every { executor.configured } returns true
+    every { executor.lookup("sigABC") } returns detail("finalized", err = null)
     every { payoutRepo.confirmItemIfUnresolved(entry.item.id) } returns true
 
     val report = reconciler().reconcileOnce()
@@ -70,8 +71,8 @@ class PayoutReconcilerTest {
   fun `confirmed but on-chain error stays in manual review - never paid`() {
     val entry = reconcilable()
     every { payoutRepo.listReconcilableItems(50) } returns listOf(entry)
-    every { rpc.configured } returns true
-    every { rpc.getTransactionDetail("sigABC") } returns
+    every { executor.configured } returns true
+    every { executor.lookup("sigABC") } returns
       detail("confirmed", err = mapOf("InstructionError" to listOf(0, "Custom(1)")))
 
     val report = reconciler().reconcileOnce()
@@ -93,8 +94,8 @@ class PayoutReconcilerTest {
   fun `still pending on-chain leaves item untouched`() {
     val entry = reconcilable()
     every { payoutRepo.listReconcilableItems(50) } returns listOf(entry)
-    every { rpc.configured } returns true
-    every { rpc.getTransactionDetail("sigABC") } returns detail("processed", err = null)
+    every { executor.configured } returns true
+    every { executor.lookup("sigABC") } returns detail("processed", err = null)
 
     val report = reconciler().reconcileOnce()
 
@@ -108,8 +109,8 @@ class PayoutReconcilerTest {
   fun `unknown signature on cluster stays pending`() {
     val entry = reconcilable()
     every { payoutRepo.listReconcilableItems(50) } returns listOf(entry)
-    every { rpc.configured } returns true
-    every { rpc.getTransactionDetail("sigABC") } returns null
+    every { executor.configured } returns true
+    every { executor.lookup("sigABC") } returns null
 
     val report = reconciler().reconcileOnce()
     assertEquals(1, report.stillPending)
@@ -120,8 +121,8 @@ class PayoutReconcilerTest {
   fun `rpc error leaves item for next run`() {
     val entry = reconcilable()
     every { payoutRepo.listReconcilableItems(50) } returns listOf(entry)
-    every { rpc.configured } returns true
-    every { rpc.getTransactionDetail("sigABC") } throws RuntimeException("rpc down")
+    every { executor.configured } returns true
+    every { executor.lookup("sigABC") } throws RuntimeException("rpc down")
 
     val report = reconciler().reconcileOnce()
     assertEquals(1, report.rpcErrors)
@@ -132,19 +133,19 @@ class PayoutReconcilerTest {
   fun `item without signature is skipped`() {
     val entry = reconcilable(sig = null)
     every { payoutRepo.listReconcilableItems(50) } returns listOf(entry)
-    every { rpc.configured } returns true
+    every { executor.configured } returns true
 
     val report = reconciler().reconcileOnce()
     assertEquals(1, report.skippedNoSignature)
-    verify(exactly = 0) { rpc.getTransactionDetail(any()) }
+    verify(exactly = 0) { executor.lookup(any()) }
   }
 
   @Test
   fun `concurrent reconcile loser cannot double-pay`() {
     val entry = reconcilable()
     every { payoutRepo.listReconcilableItems(50) } returns listOf(entry)
-    every { rpc.configured } returns true
-    every { rpc.getTransactionDetail("sigABC") } returns detail("confirmed", err = null)
+    every { executor.configured } returns true
+    every { executor.lookup("sigABC") } returns detail("confirmed", err = null)
     every { payoutRepo.confirmItemIfUnresolved(entry.item.id) } returns false // already claimed
 
     val report = reconciler().reconcileOnce()
@@ -156,16 +157,16 @@ class PayoutReconcilerTest {
 
   @Test
   fun `non-devnet cluster refuses to reconcile`() {
-    every { rpc.configured } returns true
+    every { executor.configured } returns true
     val report = reconciler(cluster = "mainnet").reconcileOnce()
     assertEquals(0, report.checked)
     verify(exactly = 0) { payoutRepo.listReconcilableItems(any()) }
-    verify(exactly = 0) { rpc.getTransactionDetail(any()) }
+    verify(exactly = 0) { executor.lookup(any()) }
   }
 
   @Test
   fun `unconfigured rpc refuses to reconcile`() {
-    every { rpc.configured } returns false
+    every { executor.configured } returns false
     val report = reconciler().reconcileOnce()
     assertEquals(0, report.checked)
     verify(exactly = 0) { payoutRepo.listReconcilableItems(any()) }

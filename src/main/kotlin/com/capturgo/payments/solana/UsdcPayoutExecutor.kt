@@ -22,7 +22,7 @@ class UsdcPayoutExecutor(
   @Value("\${payments.solana.usdc-decimals:6}") private val decimals: Int,
   @Value("\${payments.solana.confirm-timeout-ms:90000}") private val confirmTimeoutMs: Long,
   @Value("\${payments.solana.confirm-poll-ms:2000}") private val confirmPollMs: Long,
-) {
+) : PayoutExecutor {
   data class TransferResult(
     val signature: String,
     val confirmed: Boolean,
@@ -36,7 +36,7 @@ class UsdcPayoutExecutor(
    * returned signature BEFORE confirming; on any post-send ambiguity the
    * caller must call [findExistingSignature] before retrying.
    */
-  fun execute(destinationWallet: String, amountUsdcUnits: Long): TransferResult {
+  override fun execute(destinationWallet: String, amountUsdcUnits: Long): TransferResult {
     if (cluster != "devnet") {
       throw SolanaException("Mainnet execution is not implemented — devnet only")
     }
@@ -99,6 +99,14 @@ class UsdcPayoutExecutor(
    */
   fun findExistingSignature(signature: String): String? =
     runCatching { rpc.getSignatureStatus(signature) }.getOrNull()
+
+  override val configured: Boolean get() = rpc.configured && signer.active
+  override val activeCluster: String get() = cluster
+
+  override fun lookup(reference: String): SolanaRpcClient.TxDetail? =
+    runCatching { rpc.getTransactionDetail(reference) }.getOrNull()
+
+  override fun findExisting(reference: String): String? = findExistingSignature(reference)
 
   private fun awaitConfirmation(signature: String): String? {
     val deadline = System.currentTimeMillis() + confirmTimeoutMs
