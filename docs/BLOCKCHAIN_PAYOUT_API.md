@@ -20,6 +20,10 @@ blockchain payouts — it already implements the full pipeline end-to-end.
 
 All API paths below are relative to the captur-payments base URL.
 
+> **Note:** `GET /` on the base URL returns a small service descriptor
+> (`service`, `health`, `ready`, `api` pointers) — there is no other root
+> content. All functional endpoints are under `/api/v1/...`.
+
 ---
 
 ## 2. Blockchain details

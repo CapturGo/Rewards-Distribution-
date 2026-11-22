@@ -9,6 +9,17 @@ import org.springframework.web.bind.annotation.RestController
 @RestController
 class HealthController(private val dataSource: DataSource) {
 
+  @GetMapping("/")
+  fun root(): Map<String, Any> = mapOf(
+    "service" to "captur-payments",
+    "description" to "CapturGO USDC rewards ledger and Solana payout service",
+    "status" to "UP",
+    "health" to "/health",
+    "ready" to "/ready",
+    "api" to "/api/v1",
+    "docs" to "docs/BLOCKCHAIN_PAYOUT_API.md",
+  )
+
   @GetMapping("/health")
   fun health(): Map<String, String> = mapOf(
     "status" to "UP",
