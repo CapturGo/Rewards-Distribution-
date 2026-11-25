@@ -174,4 +174,31 @@ class RewardRepository(private val jdbc: JdbcTemplate) {
       "SELECT COUNT(*) FROM usdc_reward_ledger WHERE captur_user_id = ?",
       Long::class.java, capturUserId,
     ) ?: 0
+
+  /** Top contributors by earned USDC (all non-reversed ledger entries). */
+  fun topEarners(limit: Int): List<TopEarnerRow> =
+    jdbc.query(
+      """
+      SELECT captur_user_id, COUNT(*) AS clips, SUM(amount_usdc_units) AS total_units
+      FROM usdc_reward_ledger
+      WHERE status <> 'REVERSED'
+      GROUP BY captur_user_id
+      ORDER BY total_units DESC
+      LIMIT ?
+      """.trimIndent(),
+      { rs, _ ->
+        TopEarnerRow(
+          capturUserId = rs.getObject("captur_user_id", UUID::class.java),
+          clips = rs.getLong("clips"),
+          totalUsdcUnits = rs.getLong("total_units"),
+        )
+      },
+      limit,
+    )
 }
+
+data class TopEarnerRow(
+  val capturUserId: UUID,
+  val clips: Long,
+  val totalUsdcUnits: Long,
+)

@@ -1,5 +1,6 @@
 package com.capturgo.payments.api.admin
 
+import com.capturgo.payments.capturapi.CapturApiClient
 import com.capturgo.payments.core.auth.AuthContext
 import com.capturgo.payments.core.auth.AuthPrincipal
 import com.capturgo.payments.core.exception.UnauthorizedException
@@ -34,6 +35,7 @@ class AdminPaymentsController(
   private val rewardSyncService: RewardSyncService,
   private val rewardRepository: RewardRepository,
   private val walletLookup: com.capturgo.payments.payouts.WalletRepository,
+  private val capturApiClient: CapturApiClient,
 ) {
 
   private fun principal(req: HttpServletRequest): AuthPrincipal =
@@ -130,6 +132,32 @@ class AdminPaymentsController(
       limit.coerceIn(1, 200), offset.coerceAtLeast(0), status, userId,
     )
     return mapOf("items" to items, "totalItems" to total, "limit" to limit, "offset" to offset)
+  }
+
+  /** Top contributors by earned USDC — live from usdc_reward_ledger. */
+  @GetMapping("/top-earners")
+  fun topEarners(
+    req: HttpServletRequest,
+    @RequestParam(defaultValue = "10") limit: Int,
+  ): Map<String, Any> {
+    val token = token(req)
+    val rows = rewardRepository.topEarners(limit.coerceIn(1, 50))
+    val items = rows.mapIndexed { i, row ->
+      val profile = capturApiClient.getUser(token, row.capturUserId)
+      val totalUsdc = BigDecimal(row.totalUsdcUnits).movePointLeft(6)
+      val avgUsdc = if (row.clips > 0) totalUsdc.divide(BigDecimal(row.clips), 6, java.math.RoundingMode.HALF_UP) else BigDecimal.ZERO
+      mapOf(
+        "rank" to i + 1,
+        "userId" to row.capturUserId.toString(),
+        "username" to (profile?.username ?: profile?.displayName ?: ""),
+        "email" to (profile?.email ?: ""),
+        "totalUsdc" to totalUsdc.toPlainString(),
+        "totalUsdcUnits" to row.totalUsdcUnits,
+        "clips" to row.clips,
+        "avgUsdc" to avgUsdc.toPlainString(),
+      )
+    }
+    return mapOf("items" to items)
   }
 
   @GetMapping("/{id}")
