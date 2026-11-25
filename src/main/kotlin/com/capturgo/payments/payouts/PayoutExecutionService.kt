@@ -49,16 +49,20 @@ class PayoutExecutionService(
     var confirmed = 0
     var failed = 0
 
-    for (item in items) {
+    // Merge payouts per wallet address — one on-chain transfer per
+    // recipient regardless of how many reward entries they have.
+    for (group in items.groupBy { it.solanaAddress }.values) {
       val ok = try {
-        executeItem(item)
+        executeGroup(group)
         true
       } catch (e: Exception) {
-        logger.error("payout item {} failed: {}", item.id, e.message)
-        payoutRepository.updateItemStatus(item.id, "FAILED", failureReason = e.message)
+        logger.error("payout group for {} failed: {}", group.first().solanaAddress, e.message)
+        group.forEach {
+          payoutRepository.updateItemStatus(it.id, "FAILED", failureReason = e.message)
+        }
         false
       }
-      if (ok) confirmed++ else failed++
+      if (ok) confirmed += group.size else failed += group.size
     }
 
     val finalStatus = when {
@@ -77,19 +81,30 @@ class PayoutExecutionService(
     return payoutRepository.findBatch(batchId)!!
   }
 
-  /** @return true when the transfer confirmed on-chain. */
-  private fun executeItem(item: PayoutBatchItem): Boolean {
-    payoutRepository.updateItemStatus(item.id, "PROCESSING")
+  /**
+   * Execute one on-chain transfer covering every item in [items] — all items
+   * share the same destination wallet, so their amounts are summed into a
+   * single payment. Per-item bookkeeping (tx rows, statuses, reward marks)
+   * is still recorded individually.
+   *
+   * @return true when the transfer confirmed on-chain.
+   */
+  private fun executeGroup(items: List<PayoutBatchItem>): Boolean {
+    val address = items.first().solanaAddress
+    val totalUnits = items.sumOf { it.amountUsdcUnits }
+    items.forEach { payoutRepository.updateItemStatus(it.id, "PROCESSING") }
 
     val result = try {
-      executor.execute(item.solanaAddress, item.amountUsdcUnits)
+      executor.execute(address, totalUnits)
     } catch (e: Exception) {
       // Ambiguous send: tx may have landed. Mark REQUIRES_RECONCILIATION —
       // an operator (or reconciler) checks the signature before any retry.
-      payoutRepository.updateItemStatus(
-        item.id, "REQUIRES_RECONCILIATION",
-        failureReason = "send ambiguous: ${e.message}",
-      )
+      items.forEach {
+        payoutRepository.updateItemStatus(
+          it.id, "REQUIRES_RECONCILIATION",
+          failureReason = "send ambiguous: ${e.message}",
+        )
+      }
       return false
     }
 
@@ -100,32 +115,36 @@ class PayoutExecutionService(
       result.chainError != null -> "FAILED"
       else -> "SUBMITTED"
     }
-    payoutRepository.insertPayoutTransaction(
-      batchItemId = item.id,
-      txSignature = result.signature,
-      cluster = cluster,
-      status = txStatus,
-      rawResponse = """{"confirmationStatus":"${result.confirmationStatus}""" +
-        (result.chainError?.let { ""","chainError":"$it""" } ?: "") + "}",
-    )
-    payoutRepository.updateItemStatus(
-      item.id,
-      if (result.confirmed) "CONFIRMED" else "SUBMITTED",
-      txSignature = result.signature,
-    )
+    for (item in items) {
+      payoutRepository.insertPayoutTransaction(
+        batchItemId = item.id,
+        txSignature = result.signature,
+        cluster = cluster,
+        status = txStatus,
+        rawResponse = """{"confirmationStatus":"${result.confirmationStatus}""" +
+          (result.chainError?.let { ""","chainError":"$it""" } ?: "") + "}",
+      )
+      payoutRepository.updateItemStatus(
+        item.id,
+        if (result.confirmed) "CONFIRMED" else "SUBMITTED",
+        txSignature = result.signature,
+      )
+    }
 
     if (result.confirmed) {
-      payoutRepository.markRewardPaid(item.rewardId)
+      items.forEach { payoutRepository.markRewardPaid(it.rewardId) }
       return true
     }
     // Not confirmed on-chain — either still pending or failed on-chain.
     // Never mark paid; route to reconciliation/manual review.
-    payoutRepository.updateItemStatus(
-      item.id, "REQUIRES_RECONCILIATION",
-      txSignature = result.signature,
-      failureReason = result.chainError?.let { "on-chain failure: $it" }
-        ?: "confirmation timeout, status=${result.confirmationStatus}",
-    )
+    items.forEach {
+      payoutRepository.updateItemStatus(
+        it.id, "REQUIRES_RECONCILIATION",
+        txSignature = result.signature,
+        failureReason = result.chainError?.let { "on-chain failure: $it" }
+          ?: "confirmation timeout, status=${result.confirmationStatus}",
+      )
+    }
     return false
   }
 }

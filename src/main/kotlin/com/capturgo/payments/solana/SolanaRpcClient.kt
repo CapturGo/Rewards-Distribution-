@@ -1,5 +1,11 @@
 package com.capturgo.payments.solana
 
+import com.fasterxml.jackson.databind.ObjectMapper
+import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
+import java.time.Duration
 import org.p2p.solanaj.core.PublicKey
 import org.p2p.solanaj.rpc.RpcClient
 import org.p2p.solanaj.rpc.types.config.Commitment
@@ -15,12 +21,52 @@ class SolanaRpcClient(
   @Value("\${payments.solana.rpc-url:}") private val rpcUrl: String,
 ) {
   private val client: RpcClient? = rpcUrl.takeIf { it.isNotBlank() }?.let { RpcClient(it) }
+  private val http: HttpClient = HttpClient.newBuilder()
+    .connectTimeout(Duration.ofSeconds(5))
+    .build()
+  private val mapper = ObjectMapper()
 
   val configured: Boolean get() = client != null
 
   fun getSolBalanceLamports(address: String): Long {
     val c = client ?: throw SolanaException("SOLANA_RPC_URL not configured")
     return c.api.getBalance(PublicKey(address), Commitment.CONFIRMED)
+  }
+
+  /**
+   * Total SPL token balance (base units) for [owner] across every token
+   * account holding [mint]. Returns null when Solana is not configured.
+   */
+  fun getSplTokenBalance(owner: String, mint: String): Long? {
+    if (!configured) return null
+    val body = mapper.writeValueAsString(
+      mapOf(
+        "jsonrpc" to "2.0",
+        "id" to 1,
+        "method" to "getTokenAccountsByOwner",
+        "params" to listOf(
+          owner,
+          mapOf("mint" to mint),
+          mapOf("encoding" to "jsonParsed"),
+        ),
+      ),
+    )
+    val req = HttpRequest.newBuilder(URI.create(rpcUrl))
+      .timeout(Duration.ofSeconds(10))
+      .header("Content-Type", "application/json")
+      .POST(HttpRequest.BodyPublishers.ofString(body))
+      .build()
+    val res = http.send(req, HttpResponse.BodyHandlers.ofString())
+    val root = mapper.readTree(res.body())
+    var total = 0L
+    root.path("result").path("value").forEach { acc ->
+      val amt = acc
+        .path("account").path("data").path("parsed")
+        .path("info").path("tokenAmount").path("amount")
+        .asText("0")
+      total += amt.toLongOrNull() ?: 0L
+    }
+    return total
   }
 
   /** Returns the signature's confirmation status, or null when unknown/not found. */
