@@ -1,0 +1,9 @@
+project_id   = "capturgo-478506"
+region       = "asia-east2"
+service_name = "captur-payments"
+
+# GitHub repo that triggers builds on push to main.
+# NOTE: the classic `github {}` trigger requires the repo to be connected in
+# Cloud Build (Cloud Build -> Triggers -> Connect repository) before apply.
+# This repo (Rewards-Distribution-) is shared with the go-api backend on the
+# `master` branch — this trigger only fires on `main`.
