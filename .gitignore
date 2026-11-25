@@ -10,3 +10,8 @@ target/
 .DS_Store
 .m2repo/
 .devnet-keys/
+
+# Terraform
+infra/.terraform/
+infra/terraform.tfvars
+infra/*.tfstate*

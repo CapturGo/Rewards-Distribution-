@@ -37,8 +37,8 @@ class UsdcPayoutExecutor(
    * caller must call [findExistingSignature] before retrying.
    */
   override fun execute(destinationWallet: String, amountUsdcUnits: Long): TransferResult {
-    if (cluster != "devnet") {
-      throw SolanaException("Mainnet execution is not implemented — devnet only")
+    if (cluster != "devnet" && cluster != "mainnet-beta") {
+      throw SolanaException("Unsupported cluster '$cluster' — expected devnet or mainnet-beta")
     }
     if (usdcMint.isBlank()) throw SolanaException("SOLANA_USDC_MINT not configured")
     if (!signer.active) throw SolanaException("Treasury signer not active")

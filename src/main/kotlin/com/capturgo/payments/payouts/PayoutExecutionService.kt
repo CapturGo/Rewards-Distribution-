@@ -34,9 +34,9 @@ class PayoutExecutionService(
     if (batch.status != "APPROVED") {
       throw ConflictException("Batch must be APPROVED before execute (current: ${batch.status})")
     }
-    if (!solanaEnabled || cluster != "devnet") {
+    if (!solanaEnabled || (cluster != "devnet" && cluster != "mainnet-beta")) {
       throw com.capturgo.payments.core.exception.FeatureDisabledException(
-        "Solana execution requires SOLANA_ENABLED=true and SOLANA_CLUSTER=devnet",
+        "Solana execution requires SOLANA_ENABLED=true and SOLANA_CLUSTER=devnet or mainnet-beta",
       )
     }
 

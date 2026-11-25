@@ -41,7 +41,8 @@ class PrivyPayoutExecutor(
 
   override val configured: Boolean
     get() = enabled && client.configured && treasuryWalletId.isNotBlank() &&
-      cluster == "devnet" && chain == "solana_devnet"
+      ((cluster == "devnet" && chain == "solana_devnet") ||
+        (cluster == "mainnet-beta" && chain == "solana_mainnet"))
 
   override val activeCluster: String get() = cluster
 

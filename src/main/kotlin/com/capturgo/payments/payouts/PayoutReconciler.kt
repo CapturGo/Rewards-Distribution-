@@ -56,8 +56,8 @@ class PayoutReconciler(
 
   /** One reconciliation pass. Exposed for tests and manual triggering. */
   fun reconcileOnce(): ReconcileReport {
-    if (cluster != "devnet") {
-      logger.warn("reconcile skipped: cluster={} (devnet only)", cluster)
+    if (cluster != "devnet" && cluster != "mainnet-beta") {
+      logger.warn("reconcile skipped: cluster={} (unsupported)", cluster)
       return ReconcileReport(0, 0, 0, 0, 0, 0)
     }
     if (!executor.configured) {

@@ -97,6 +97,12 @@ class RewardSyncService(
       return OutcomeResult(Outcome.INELIGIBLE)
     }
 
+    // QA "verify only" clips carry a payout hold — verified for quality but
+    // explicitly excluded from USDC rewards.
+    if (sub.payoutHold == true) {
+      return OutcomeResult(Outcome.INELIGIBLE)
+    }
+
     // Device tier comes from the capability registry — unknown or unverified
     // devices are INELIGIBLE (never auto-BASIC) per product decision.
     val deviceKey = sub.deviceModel?.trim()?.lowercase()

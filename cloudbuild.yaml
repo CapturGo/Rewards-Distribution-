@@ -7,8 +7,19 @@ steps:
       - -t
       - ${_IMAGE}:latest
       - .
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE_NAME}
+      - --image=${_IMAGE}:${COMMIT_SHA}
+      - --region=asia-east2
+      - --platform=managed
+      - --quiet
 images:
   - ${_IMAGE}:${COMMIT_SHA}
   - ${_IMAGE}:latest
 substitutions:
   _IMAGE: asia-east2-docker.pkg.dev/capturgo-478506/captur-release/captur-payments
+  _SERVICE_NAME: captur-payments

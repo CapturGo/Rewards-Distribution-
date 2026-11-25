@@ -32,6 +32,9 @@ data class CapturSubmission(
   val metadataUrls: Map<String, Any?>? = null,
   val verificationCount: Int? = null,
   val rejectionCount: Int? = null,
+  // True when QA verified the clip but placed a payout hold — the clip is
+  // eligible for delivery but must NOT generate a USDC reward.
+  val payoutHold: Boolean? = null,
   val metadata: Map<String, Any?>? = null,
   val createdAt: Instant? = null,
   val reviewedAt: Instant? = null,

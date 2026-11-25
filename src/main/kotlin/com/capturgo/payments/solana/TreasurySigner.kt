@@ -6,9 +6,9 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
 
 /**
- * Loads the devnet treasury keypair from configuration (Secret Manager in
- * deployed envs). Refuses to operate on mainnet — mainnet signing requires a
- * different custody decision (KMS/multisig) that has not been made.
+ * Loads the treasury keypair from configuration (Secret Manager in deployed
+ * envs). Operates on devnet or mainnet-beta — mainnet payouts move real USDC,
+ * so the cluster must be set deliberately via SOLANA_CLUSTER.
  */
 @Component
 class TreasurySigner(
@@ -17,7 +17,7 @@ class TreasurySigner(
   @Value("\${payments.solana.treasury-secret-key:}") private val secretKeyBase58: String,
   @Value("\${payments.solana.treasury-address:}") private val treasuryAddress: String,
 ) {
-  val active: Boolean get() = enabled && cluster == "devnet" && secretKeyBase58.isNotBlank()
+  val active: Boolean get() = enabled && (cluster == "devnet" || cluster == "mainnet-beta") && secretKeyBase58.isNotBlank()
 
   private val account: Account? by lazy {
     if (!active) return@lazy null
