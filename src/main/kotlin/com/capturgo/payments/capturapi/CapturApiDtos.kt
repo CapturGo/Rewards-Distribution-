@@ -58,6 +58,8 @@ data class CapturUserProfile(
   val walletAddress: String? = null,
   val seekerWallet: String? = null,
   val displayName: String? = null,
+  // Privy DID (users.external_id) — present on the admin user endpoint.
+  val externalId: String? = null,
 )
 
 @JsonIgnoreProperties(ignoreUnknown = true)
