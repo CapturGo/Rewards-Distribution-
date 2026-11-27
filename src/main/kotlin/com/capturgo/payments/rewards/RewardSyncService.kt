@@ -3,6 +3,7 @@ package com.capturgo.payments.rewards
 import com.capturgo.payments.capturapi.CapturApiClient
 import com.capturgo.payments.capturapi.CapturSubmission
 import com.capturgo.payments.payouts.WalletRepository
+import com.capturgo.payments.solana.PrivyWalletClient
 import com.fasterxml.jackson.databind.ObjectMapper
 import java.time.Instant
 import org.slf4j.LoggerFactory
@@ -24,6 +25,9 @@ class RewardSyncService(
   private val rewardCalculator: RewardCalculator,
   private val deviceCapabilityRepository: DeviceCapabilityRepository,
   private val deviceEvidenceRepository: DeviceEvidenceRepository,
+  private val privyWalletClient: PrivyWalletClient,
+  @Value("\${payments.wallet.privy-autofill-enabled:true}")
+  private val privyAutofillEnabled: Boolean,
 ) {
   private val logger = LoggerFactory.getLogger(RewardSyncService::class.java)
 
@@ -196,7 +200,23 @@ class RewardSyncService(
     if (existing != null && existing.verification == "VERIFIED") return existing.solanaAddress
 
     val profile = capturApiClient.getUser(token, userId) ?: return null
-    val candidate = profile.seekerWallet ?: profile.walletAddress ?: return null
+    var candidate = profile.seekerWallet ?: profile.walletAddress
+
+    // Fallback: users who never linked a seeker wallet still have a Privy
+    // embedded Solana wallet (created at login). Resolve it via the Privy
+    // DID on the profile so they remain payable.
+    if (candidate == null && privyAutofillEnabled && privyWalletClient.configured) {
+      val privyDid = profile.externalId
+      if (!privyDid.isNullOrBlank()) {
+        candidate = try {
+          privyWalletClient.getUserSolanaAddress(privyDid)
+        } catch (e: Exception) {
+          logger.warn("privy wallet lookup failed for user {}: {}", userId, e.message)
+          null
+        }
+      }
+    }
+    if (candidate == null) return null
     val valid = isSolanaAddress(candidate)
     walletRepository.upsert(
       userId = userId,

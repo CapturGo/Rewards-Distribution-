@@ -88,6 +88,35 @@ class PrivyWalletClient(
     return Action(id = res.path("id").asText(""), status = res.path("status").asText("pending"))
   }
 
+  /**
+   * GET /v1/users/{user_id} — resolve the user's embedded Solana wallet
+   * address from their linked accounts. Returns null when the user has no
+   * Solana wallet or the lookup fails (callers treat null as "unresolvable").
+   * Prefers wallets created by Privy itself (embedded) over external links.
+   */
+  fun getUserSolanaAddress(privyUserId: String): String? {
+    val user = try {
+      request("GET", "/v1/users/$privyUserId", null, null)
+    } catch (e: PrivyApiException) {
+      if (e.status == 404) return null
+      throw e
+    }
+    val accounts = user.path("linked_accounts")
+    if (!accounts.isArray) return null
+
+    var firstSolana: String? = null
+    for (account in accounts) {
+      val chainType = account.path("chain_type").asText("")
+      val address = account.path("address").asText("")
+      if (chainType.equals("solana", ignoreCase = true) && address.isNotBlank()) {
+        val client = account.path("wallet_client").asText("")
+        if (client.equals("privy", ignoreCase = true)) return address
+        if (firstSolana == null) firstSolana = address
+      }
+    }
+    return firstSolana
+  }
+
   /** GET /v1/wallets/{wallet_id}/actions/{action_id}. Null on 404. */
   fun getAction(walletId: String, actionId: String): Action? {
     val res = try {
