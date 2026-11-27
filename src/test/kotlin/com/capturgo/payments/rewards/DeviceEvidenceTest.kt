@@ -4,6 +4,7 @@ import com.capturgo.payments.capturapi.CapturApiClient
 import com.capturgo.payments.capturapi.CapturSubmission
 import com.capturgo.payments.capturapi.PagedSubmissions
 import com.capturgo.payments.payouts.WalletRepository
+import com.capturgo.payments.solana.PrivyWalletClient
 import com.fasterxml.jackson.databind.ObjectMapper
 import io.mockk.every
 import io.mockk.mockk
@@ -40,6 +41,8 @@ class DeviceEvidenceTest {
     ),
     deviceCapabilityRepository = deviceRepo,
     deviceEvidenceRepository = evidenceRepo,
+    privyWalletClient = mockk(relaxed = true),
+    privyAutofillEnabled = false,
   )
 
   private fun verifiedFull() = DeviceCapability(
