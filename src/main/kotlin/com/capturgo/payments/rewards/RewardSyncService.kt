@@ -34,12 +34,16 @@ class RewardSyncService(
   @Volatile
   private var running = false
 
+  /** Per-sync cache so repeated submissions from one user resolve once. */
+  private val walletLookupCache = java.util.concurrent.ConcurrentHashMap<java.util.UUID, String?>()
+
   @Transactional
   fun sync(token: String): RewardSyncResult {
     if (running) {
       return RewardSyncResult(0, 0, 0, 0, 0, 0, listOf("sync already in progress"), Instant.now())
     }
     running = true
+    walletLookupCache.clear()
     var scanned = 0
     var created = 0
     var skippedExisting = 0
@@ -93,6 +97,10 @@ class RewardSyncService(
 
   private fun processSubmission(token: String, sub: CapturSubmission): OutcomeResult {
     if (rewardRepository.existsBySubmissionId(sub.id)) {
+      // Backfill payout wallet for already-synced rewards whose user has no
+      // VERIFIED wallet yet (e.g. synced before Privy autofill existed).
+      // resolveWallet short-circuits when a VERIFIED wallet already exists.
+      resolveWallet(token, sub.userId)
       return OutcomeResult(Outcome.EXISTING)
     }
     // captur-api returns the display name ("approved"), not the enum name —
@@ -198,7 +206,14 @@ class RewardSyncService(
   private fun resolveWallet(token: String, userId: java.util.UUID): String? {
     val existing = walletRepository.findByUserId(userId)
     if (existing != null && existing.verification == "VERIFIED") return existing.solanaAddress
+    if (walletLookupCache.containsKey(userId)) return walletLookupCache[userId]
 
+    val resolved = resolveWalletUncached(token, userId)
+    walletLookupCache[userId] = resolved
+    return resolved
+  }
+
+  private fun resolveWalletUncached(token: String, userId: java.util.UUID): String? {
     val profile = capturApiClient.getUser(token, userId) ?: return null
     var candidate = profile.seekerWallet ?: profile.walletAddress
 
