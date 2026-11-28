@@ -35,7 +35,7 @@ class RewardSyncService(
   private var running = false
 
   /** Per-sync cache so repeated submissions from one user resolve once. */
-  private val walletLookupCache = java.util.concurrent.ConcurrentHashMap<java.util.UUID, String?>()
+  private val walletLookupCache = java.util.concurrent.ConcurrentHashMap<java.util.UUID, String>()
 
   @Transactional
   fun sync(token: String): RewardSyncResult {
@@ -206,10 +206,12 @@ class RewardSyncService(
   private fun resolveWallet(token: String, userId: java.util.UUID): String? {
     val existing = walletRepository.findByUserId(userId)
     if (existing != null && existing.verification == "VERIFIED") return existing.solanaAddress
-    if (walletLookupCache.containsKey(userId)) return walletLookupCache[userId]
+    if (walletLookupCache.containsKey(userId)) {
+      return walletLookupCache[userId]?.takeIf { it.isNotEmpty() }
+    }
 
     val resolved = resolveWalletUncached(token, userId)
-    walletLookupCache[userId] = resolved
+    walletLookupCache[userId] = resolved ?: ""
     return resolved
   }
 
