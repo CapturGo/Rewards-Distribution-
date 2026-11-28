@@ -160,6 +160,37 @@ class AdminPaymentsController(
     return mapOf("items" to items)
   }
 
+  /**
+   * Wallet coverage across payable rewards — surfaces users whose USDC
+   * rewards cannot be paid because no VERIFIED Solana wallet exists.
+   * This is the early-warning view for the seeker-wallet failure mode.
+   */
+  @GetMapping("/wallet-coverage")
+  fun walletCoverage(
+    @RequestParam(defaultValue = "50") limit: Int,
+  ): Map<String, Any> {
+    val c = walletLookup.coverage()
+    val uncovered = walletLookup.uncoveredPayableRewards(limit.coerceIn(1, 200))
+    return mapOf(
+      "payableRewards" to c.payableRewards,
+      "coveredRewards" to c.coveredRewards,
+      "uncoveredRewards" to c.uncoveredRewards,
+      "uncoveredUsers" to c.uncoveredUsers,
+      "uncoveredUsdcUnits" to c.uncoveredUsdcUnits,
+      "coveragePercent" to if (c.payableRewards > 0) {
+        BigDecimal(c.coveredRewards * 10000 / c.payableRewards).movePointLeft(2).toPlainString()
+      } else "100",
+      "uncovered" to uncovered.map {
+        mapOf(
+          "capturUserId" to it.capturUserId.toString(),
+          "rewardCount" to it.rewardCount,
+          "usdcUnits" to it.usdcUnits,
+          "walletState" to it.walletState,
+        )
+      },
+    )
+  }
+
   @GetMapping("/{id}")
   fun paymentDetail(@PathVariable id: UUID): Map<String, Any> =
     mapOf("message" to "payment detail not yet implemented", "id" to id.toString())

@@ -60,4 +60,68 @@ class WalletRepository(private val jdbc: JdbcTemplate) {
         )
       },
     ).associateBy { it.userId }
+
+  /** Payout-wallet coverage across rewards that are payable or reserved. */
+  data class Coverage(
+    val payableRewards: Long,
+    val coveredRewards: Long,
+    val uncoveredRewards: Long,
+    val uncoveredUsers: Long,
+    val uncoveredUsdcUnits: Long,
+  )
+
+  fun coverage(): Coverage =
+    jdbc.queryForObject(
+      """
+      SELECT count(*) AS payable_rewards,
+             count(*) FILTER (WHERE w.verification = 'VERIFIED') AS covered_rewards,
+             count(*) FILTER (WHERE w.verification IS DISTINCT FROM 'VERIFIED') AS uncovered_rewards,
+             count(DISTINCT l.captur_user_id) FILTER (WHERE w.verification IS DISTINCT FROM 'VERIFIED') AS uncovered_users,
+             COALESCE(sum(l.amount_usdc_units) FILTER (WHERE w.verification IS DISTINCT FROM 'VERIFIED'), 0) AS uncovered_usdc_units
+      FROM usdc_reward_ledger l
+      LEFT JOIN contributor_wallets w ON w.user_id = l.captur_user_id
+      WHERE l.status IN ('AVAILABLE', 'RESERVED_FOR_PAYOUT')
+      """.trimIndent(),
+    ) { rs, _ ->
+      Coverage(
+        payableRewards = rs.getLong("payable_rewards"),
+        coveredRewards = rs.getLong("covered_rewards"),
+        uncoveredRewards = rs.getLong("uncovered_rewards"),
+        uncoveredUsers = rs.getLong("uncovered_users"),
+        uncoveredUsdcUnits = rs.getLong("uncovered_usdc_units"),
+      )
+    } ?: Coverage(0, 0, 0, 0, 0)
+
+  /** Payable rewards whose user has no VERIFIED wallet — the payout blockers. */
+  fun uncoveredPayableRewards(limit: Int): List<UncoveredReward> =
+    jdbc.query(
+      """
+      SELECT l.captur_user_id, count(*) AS reward_count,
+             sum(l.amount_usdc_units) AS usdc_units,
+             COALESCE(w.verification, 'MISSING') AS wallet_state
+      FROM usdc_reward_ledger l
+      LEFT JOIN contributor_wallets w ON w.user_id = l.captur_user_id
+      WHERE l.status IN ('AVAILABLE', 'RESERVED_FOR_PAYOUT')
+        AND w.verification IS DISTINCT FROM 'VERIFIED'
+      GROUP BY l.captur_user_id, w.verification
+      ORDER BY usdc_units DESC
+      LIMIT ?
+      """.trimIndent(),
+      { rs, _ ->
+        UncoveredReward(
+          capturUserId = rs.getObject("captur_user_id", UUID::class.java),
+          rewardCount = rs.getLong("reward_count"),
+          usdcUnits = rs.getLong("usdc_units"),
+          walletState = rs.getString("wallet_state"),
+        )
+      },
+      limit,
+    )
+
+  data class UncoveredReward(
+    val capturUserId: UUID,
+    val rewardCount: Long,
+    val usdcUnits: Long,
+    val walletState: String,
+  )
 }
