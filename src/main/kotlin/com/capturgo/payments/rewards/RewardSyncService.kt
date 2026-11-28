@@ -89,6 +89,20 @@ class RewardSyncService(
       walletsMissing = walletsMissing, errors = errors, finishedAt = Instant.now(),
     )
     logger.info("reward sync done: {}", result)
+
+    // Wallet-coverage alert: payable rewards with no VERIFIED Solana wallet
+    // cannot be paid out. Logged as WARN so log-based alerting can catch it.
+    // Non-fatal — monitoring must never break the sync itself.
+    runCatching { walletRepository.coverage().uncoveredRewards }
+      .onSuccess { uncovered ->
+        if (uncovered > 0) {
+          logger.warn(
+            "wallet coverage alert: {} payable rewards have no VERIFIED Solana wallet",
+            uncovered,
+          )
+        }
+      }
+      .onFailure { logger.debug("wallet coverage check failed: {}", it.message) }
     return result
   }
 
